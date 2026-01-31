@@ -43,10 +43,12 @@ def create_sub_vol_eval_dataset(annot_path, bifur_prob, end_prob, root_prob,
                 index_mapping[cumulative_index] = [tree_id, index_within_list]
 
         # Generate num_type_samples random indices for type_points
+        # Cap to available points if fewer than requested
+        actual_num_samples = min(num_type_samples[t_i], total_type_points)
         if type == 'root':
-            type_samples_idx = random.choices(range(total_type_points), k=num_type_samples[t_i])
+            type_samples_idx = random.choices(range(total_type_points), k=actual_num_samples)
         else:
-            type_samples_idx = random.sample(range(total_type_points), num_type_samples[t_i])
+            type_samples_idx = random.sample(range(total_type_points), actual_num_samples)
 
         for idx in type_samples_idx:
             tree_id, index_within_list = index_mapping[idx]
