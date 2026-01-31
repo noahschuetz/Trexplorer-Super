@@ -60,18 +60,46 @@ def load_json_graph(json_path: str) -> dict:
         return json.load(f)
 
 
-def load_mask_and_compute_distance_transform(mask_path: str) -> np.ndarray:
-    """Load segmentation mask and compute distance transform for radius estimation."""
+def load_mask_and_compute_distance_transform(mask_path: str) -> tuple:
+    """Load segmentation mask and compute distance transform for radius estimation.
+
+    Returns:
+        Tuple of (distance_map, affine_matrix)
+    """
     if nib is None:
         raise ImportError("nibabel is required for mask loading")
 
     mask_nii = nib.load(mask_path)
     mask = mask_nii.get_fdata().astype(np.uint8)
+    affine = mask_nii.affine
 
     # Distance transform gives distance to nearest background voxel
     distance_map = distance_transform_edt(mask > 0)
 
-    return distance_map
+    return distance_map, affine
+
+
+def ras_to_voxel(pos: list, affine: np.ndarray) -> list:
+    """Convert RAS (world) coordinates to voxel indices.
+
+    Args:
+        pos: [x, y, z] position in RAS/world coordinates (mm)
+        affine: 4x4 affine transformation matrix from the NIfTI file
+
+    Returns:
+        [i, j, k] voxel indices
+    """
+    # Compute inverse of affine to go from world -> voxel
+    inv_affine = np.linalg.inv(affine)
+
+    # Convert position to homogeneous coordinates
+    pos_homo = np.array([pos[0], pos[1], pos[2], 1.0])
+
+    # Apply inverse affine
+    voxel_homo = inv_affine @ pos_homo
+
+    # Return voxel indices (round to nearest integer for indexing)
+    return [float(voxel_homo[0]), float(voxel_homo[1]), float(voxel_homo[2])]
 
 
 def get_radius_at_position(pos: list, distance_map: np.ndarray, spacing: float = 1.0) -> float:
@@ -88,18 +116,29 @@ def get_radius_at_position(pos: list, distance_map: np.ndarray, spacing: float =
     return float(distance_map[x, y, z]) * spacing
 
 
-def build_networkx_graph(json_data: dict) -> nx.DiGraph:
-    """Build a NetworkX directed graph from JSON data."""
+def build_networkx_graph(json_data: dict, affine: np.ndarray = None) -> nx.DiGraph:
+    """Build a NetworkX directed graph from JSON data.
+
+    Args:
+        json_data: Parsed JSON graph data
+        affine: Optional affine matrix for RAS->voxel conversion
+    """
     G = nx.DiGraph()
 
-    # Add nodes
+    # Add nodes (convert positions if affine provided)
     for node in json_data['nodes']:
-        G.add_node(node['id'], pos=node['pos'], is_root=node.get('is_root', False))
+        pos = node['pos']
+        if affine is not None:
+            pos = ras_to_voxel(pos, affine)
+        G.add_node(node['id'], pos=pos, is_root=node.get('is_root', False))
 
-    # Add edges with skeleton points
+    # Add edges with skeleton points (convert if affine provided)
     for edge in json_data['edges']:
+        skeletons = edge.get('skeletons', [])
+        if affine is not None and skeletons:
+            skeletons = [ras_to_voxel(pt, affine) for pt in skeletons]
         G.add_edge(edge['source'], edge['target'],
-                   skeletons=edge.get('skeletons', []),
+                   skeletons=skeletons,
                    length=edge.get('length', 0))
 
     return G
@@ -350,15 +389,17 @@ def compute_trajectories(root_node: Node, all_ids: list, bifur_ids: list,
 
 
 def convert_single_sample(json_path: str, mask_path: str = None,
-                          spacing: float = 1.0, default_radius: float = 1.0) -> dict:
+                          spacing: float = 1.0, default_radius: float = 1.0,
+                          convert_coords: bool = True) -> dict:
     """
     Convert a single JSON graph to Trexplorer pickle format.
 
     Args:
         json_path: Path to JSON graph file
-        mask_path: Path to segmentation mask (.nii.gz) for radius estimation
+        mask_path: Path to segmentation mask (.nii.gz) for radius estimation and coordinate conversion
         spacing: Voxel spacing in mm
         default_radius: Default radius if no mask provided
+        convert_coords: If True, convert RAS coordinates to voxel indices using mask affine
 
     Returns:
         Dictionary in Trexplorer pickle format
@@ -366,13 +407,15 @@ def convert_single_sample(json_path: str, mask_path: str = None,
     # Load JSON
     json_data = load_json_graph(json_path)
 
-    # Load distance map if mask provided
+    # Load distance map and affine if mask provided
     distance_map = None
+    affine = None
     if mask_path and os.path.exists(mask_path):
-        distance_map = load_mask_and_compute_distance_transform(mask_path)
+        distance_map, affine = load_mask_and_compute_distance_transform(mask_path)
 
-    # Build NetworkX graph
-    G = build_networkx_graph(json_data)
+    # Build NetworkX graph (convert coordinates from RAS to voxel if affine available)
+    coord_affine = affine if convert_coords else None
+    G = build_networkx_graph(json_data, coord_affine)
 
     # Find roots
     roots = find_root_nodes(G)
@@ -453,6 +496,7 @@ def convert_dataset(input_dir: str, mask_dir: str, output_dir: str,
         return
 
     print(f"Found {len(json_files)} JSON files to convert")
+    print("Note: Converting RAS (world) coordinates to voxel indices using mask affine")
 
     for json_path in tqdm(json_files, desc="Converting"):
         # Determine sample ID from filename
