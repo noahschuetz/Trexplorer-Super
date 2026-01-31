@@ -93,8 +93,8 @@ if __name__ == '__main__':
     seq_len = 10
     seq_range_half = False
 
-    dataset = 'syntrx'  # 'atm22', 'parse2022', 'syntrx'
-    annot_dir = f'PATH/TO/DATASET/{dataset}/annots_val_sub_vol'
+    dataset = 'coronary'  # 'atm22', 'parse2022', 'syntrx', 'coronary'
+    annot_dir = f'./data/{dataset}/annots_val_sub_vol'
     out_dir = f'./data/{dataset}/'
     save_path = out_dir + 'annots_val_sub_vol.pickle'
     annot_paths = glob.glob(os.path.join(annot_dir, "*.pickle"))
