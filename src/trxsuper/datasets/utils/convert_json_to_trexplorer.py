@@ -488,27 +488,24 @@ def organize_converted_dataset(data_dir: str, output_dir: str,
                                train_ratio: float = 0.7,
                                val_ratio: float = 0.15,
                                test_ratio: float = 0.15,
-                               seed: int = 42):
+                               seed: int = 42,
+                               annot_dir: str = None):
     """
     Organize converted dataset into Trexplorer directory structure.
 
     Args:
-        data_dir: Directory containing images, masks, and converted annotations
+        data_dir: Directory containing images and masks
         output_dir: Destination directory
         train_ratio: Fraction for training
         val_ratio: Fraction for validation
         test_ratio: Fraction for testing
         seed: Random seed for reproducibility
+        annot_dir: Directory containing annotations (default: data_dir/annotations)
     """
     import shutil
     import random
 
     random.seed(seed)
-
-    # Expected structure in data_dir:
-    # - images/*.nii.gz or *.img.nii.gz
-    # - masks/*.nii.gz or *.label.nii.gz
-    # - annotations/*.pickle (converted from JSON)
 
     # Create output directories
     subdirs = [
@@ -521,7 +518,8 @@ def organize_converted_dataset(data_dir: str, output_dir: str,
         os.makedirs(os.path.join(output_dir, subdir), exist_ok=True)
 
     # Find all annotation files
-    annot_dir = os.path.join(data_dir, 'annotations')
+    if annot_dir is None:
+        annot_dir = os.path.join(data_dir, 'annotations')
     annot_files = sorted(Path(annot_dir).glob('*.pickle'))
 
     if not annot_files:
@@ -544,25 +542,35 @@ def organize_converted_dataset(data_dir: str, output_dir: str,
 
     def copy_sample(sample_name: str, split: str, idx: int):
         """Copy a sample's files to the appropriate split directories."""
-        # Find source files (handle different naming conventions)
+        # Find source files (handle different naming conventions and directory structures)
         img_patterns = [f'{sample_name}.img.nii.gz', f'{sample_name}.nii.gz']
         mask_patterns = [f'{sample_name}.label.nii.gz', f'{sample_name}.nii.gz']
 
+        # Search in both data_dir/images/ and data_dir/ directly
+        img_dirs = [os.path.join(data_dir, 'images'), data_dir]
+        mask_dirs = [os.path.join(data_dir, 'masks'), data_dir]
+
         img_src = None
-        for pattern in img_patterns:
-            path = os.path.join(data_dir, 'images', pattern)
-            if os.path.exists(path):
-                img_src = path
+        for img_dir in img_dirs:
+            for pattern in img_patterns:
+                path = os.path.join(img_dir, pattern)
+                if os.path.exists(path):
+                    img_src = path
+                    break
+            if img_src:
                 break
 
         mask_src = None
-        for pattern in mask_patterns:
-            path = os.path.join(data_dir, 'masks', pattern)
-            if os.path.exists(path):
-                mask_src = path
+        for mask_dir in mask_dirs:
+            for pattern in mask_patterns:
+                path = os.path.join(mask_dir, pattern)
+                if os.path.exists(path):
+                    mask_src = path
+                    break
+            if mask_src:
                 break
 
-        annot_src = os.path.join(data_dir, 'annotations', f'{sample_name}.pickle')
+        annot_src = os.path.join(annot_dir, f'{sample_name}.pickle')
 
         # Copy to destination
         dst_name = f'{idx}.nii.gz'
@@ -623,7 +631,9 @@ def main():
     organize_parser = subparsers.add_parser('organize',
                                             help='Organize into Trexplorer directory structure')
     organize_parser.add_argument('--data_dir', required=True,
-                                help='Directory with images/, masks/, annotations/')
+                                help='Directory with images and masks')
+    organize_parser.add_argument('--annot_dir', default=None,
+                                help='Directory with annotations (default: data_dir/annotations)')
     organize_parser.add_argument('--output_dir', required=True,
                                 help='Destination directory')
     organize_parser.add_argument('--train_ratio', type=float, default=0.7)
@@ -647,7 +657,8 @@ def main():
     elif args.command == 'organize':
         organize_converted_dataset(args.data_dir, args.output_dir,
                                   args.train_ratio, args.val_ratio,
-                                  args.test_ratio, args.seed)
+                                  args.test_ratio, args.seed,
+                                  args.annot_dir)
 
     elif args.command == 'single':
         result = convert_single_sample(args.json, args.mask, args.spacing)
