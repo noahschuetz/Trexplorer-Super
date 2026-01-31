@@ -24,3 +24,5 @@ src/trxsuper/models/ops/lib*
 src/trxsuper/models/ops/temp*
 /src/trxsuper/models/dino/ops3d/build*
 /src/trxsuper/models/dino/ops3d/dist*
+/trexplorer_env/bin
+/trexplorer_env

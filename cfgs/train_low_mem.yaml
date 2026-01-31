@@ -1,0 +1,19 @@
+# Low memory configuration for GPUs with 8GB VRAM (e.g., RTX 2080 Super)
+# Use with: python src/train_trx.py with cfgs/train_low_mem.yaml
+
+# Reduced batch size (most impactful change)
+batch_size: 2  # Down from 8
+
+# Keep AMP enabled (critical for memory)
+amp: true
+
+# Optional: reduce cache to save CPU RAM
+cache_num: 16  # Down from 32
+
+# Optional: gradient accumulation to maintain effective batch size
+# (would need code modification to implement)
+
+# If still OOM, try these more aggressive settings:
+# batch_size: 1
+# traj_train_len: 4  # Down from 6
+# hidden_dim: 256    # Down from 512 (affects model capacity)
