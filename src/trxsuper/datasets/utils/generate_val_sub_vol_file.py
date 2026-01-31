@@ -56,9 +56,13 @@ def create_sub_vol_eval_dataset(annot_path, bifur_prob, end_prob, root_prob,
             node_point_id = node_name.split('-')[1]
             while node_point_id == '0' and type == 'end':
                 idx += 1
+                if idx not in index_mapping:
+                    break
                 tree_id, index_within_list = index_mapping[idx]
                 node_name = type_points[tree_id][index_within_list]
                 node_point_id = node_name.split('-')[1]
+            if idx not in index_mapping:
+                continue
             if type == 'bifur':
                 # sample a random index between (node_point_id - seq_len//2) and node_point_id
                 index = random.randint(max(0, int(node_point_id) - seq_len), int(node_point_id))
